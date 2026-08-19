@@ -776,6 +776,26 @@ describe("research turn controller", () => {
     store.close();
   });
 
+  test("resuming a paused season starts a fresh stall observation window", () => {
+    const store = new ResearchStore(":memory:");
+    const season = store.createSeason(20260802, DEFAULT_SEASON_CONFIG, "resumed-stall-review");
+    const waiting = store.prepareNextTurn(season)!;
+    const now = Date.now();
+    store.db
+      .query("UPDATE turns SET prepared_at=? WHERE season_id=? AND turn=?")
+      .run(now - 31 * 60 * 1000, season, waiting.turn);
+    store.pauseSeason(season);
+    expect(store.resumeSeason(season)).toBe(true);
+
+    expect(store.reviewLatestSeason(now)).toMatchObject({
+      action: "continue",
+      reason: "active_season_healthy",
+      seasonId: season,
+      waitingTurn: waiting.turn,
+    });
+    store.close();
+  });
+
   test("the lifecycle review expires and pauses an attempt older than the stall window", () => {
     const store = new ResearchStore(":memory:");
     const season = store.createSeason(20260802, DEFAULT_SEASON_CONFIG, "stale-attempt-review");

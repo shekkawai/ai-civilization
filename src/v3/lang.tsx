@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RULES } from "../sim/config";
 
 /**
@@ -241,6 +241,9 @@ export function V3LangProvider({ children }: { children: ReactNode }) {
   const [lang, setLang] = useState<Lang>(() =>
     typeof navigator !== "undefined" && navigator.language.startsWith("en") ? "en" : "zh",
   );
+  useEffect(() => {
+    if (typeof document !== "undefined") document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
+  }, [lang]);
   const value = useMemo(() => ({ lang, setLang }), [lang]);
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>;
 }

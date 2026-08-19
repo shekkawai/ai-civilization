@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   expectedModels,
   modelsMatch,
+  pairedClaimsAreBusy,
   parseClaudeJson,
   parseCodexJsonl,
   providerEnvironment,
@@ -74,5 +75,20 @@ describe("native-plan turn coordinator", () => {
     expect(codex.Z_AI_API_KEY).toBe("zai-key");
     expect(codex.ANTHROPIC_API_KEY).toBeUndefined();
     expect(codex.RANDOM_PERSONAL_SETTING).toBeUndefined();
+  });
+
+  test("waits when a restarted process finds both claims still leased", () => {
+    expect(
+      pairedClaimsAreBusy(
+        { ok: false, reason: "busy", seasonId: "season", turn: 45, civ: "north" },
+        { ok: false, reason: "busy", seasonId: "season", turn: 45, civ: "south" },
+      ),
+    ).toBe(true);
+    expect(
+      pairedClaimsAreBusy(
+        { ok: false, reason: "busy", seasonId: "season", turn: 45, civ: "north" },
+        { ok: false, reason: "season_inactive", seasonId: "season", turn: 45, civ: "south" },
+      ),
+    ).toBe(false);
   });
 });

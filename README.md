@@ -147,6 +147,8 @@ Runtime data defaults to `data/research.sqlite` and is ignored by Git. Each reso
 - the resolved world and hash;
 - compact spectator statistics.
 
+A season also records the commit it ran from. Set `GIT_COMMIT` before creating a season (`GIT_COMMIT=$(git rev-parse HEAD) bun run dev`), or pass `codeCommit` in the create-season request; without it the season is stored as `working-tree` and loses that provenance.
+
 The replay verifier regenerates the world from the season seed and checks every stored hash. Existing seeds and protocol behavior are immutable. Physics or terrain changes require a new protocol branch or seed variant.
 
 One season is one stochastic sample, not a general model ranking. Changes to a model, seat, world, player interface, reasoning level, or harness are separate experimental factors and should be labelled as such.

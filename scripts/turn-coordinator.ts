@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { decodeWorld } from "../src/research/codec";
 import { parseModelDecision } from "../src/research/report";
-import { ResearchStore, type SeasonConfig } from "../src/research/store";
+import { ResearchStore, type ClaimResult, type SeasonConfig } from "../src/research/store";
 import type { CivId } from "../src/sim/types";
 
 type AdapterKind = "claude-cli" | "codex-cli";
@@ -118,6 +118,17 @@ export function modelsMatch(season: SeasonConfig, coordinator: CoordinatorConfig
       actual.reasoning === expected[civ].reasoning
     );
   });
+}
+
+export function pairedClaimsAreBusy(north: ClaimResult, south: ClaimResult) {
+  return (
+    !north.ok &&
+    !south.ok &&
+    north.reason === "busy" &&
+    south.reason === "busy" &&
+    north.seasonId === south.seasonId &&
+    north.turn === south.turn
+  );
 }
 
 export function parseCodexJsonl(output: string): ProviderResult {
@@ -373,6 +384,9 @@ export async function runCoordinatorCycle(config = loadCoordinatorConfig()) {
 
     const north = store.claimDecision(season.id, "north");
     const south = store.claimDecision(season.id, "south");
+    if (pairedClaimsAreBusy(north, south)) {
+      return { ok: false, reason: "paired_claim_busy", seasonId: season.id, turn: north.turn };
+    }
     if (!north.ok || !south.ok || north.turn !== south.turn || north.snapshotHash !== south.snapshotHash) {
       store.pauseSeason(season.id);
       return { ok: false, reason: "paired_claim_failed", seasonId: season.id, north, south };

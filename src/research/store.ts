@@ -96,6 +96,7 @@ interface SeasonRow {
   world_hash: string;
   created_at: number;
   updated_at: number;
+  resumed_at: number | null;
   abort_reason: string | null;
 }
 
@@ -287,6 +288,7 @@ export class ResearchStore {
         world_hash TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
+        resumed_at INTEGER,
         abort_reason TEXT
       );
       CREATE TABLE IF NOT EXISTS turns (
@@ -438,6 +440,7 @@ export class ResearchStore {
     this.ensureColumn("turn_stats", "migration_food_required", "INTEGER");
     this.ensureColumn("turn_stats", "seen_tiles", "INTEGER");
     this.ensureColumn("turn_stats", "nearest_gap", "INTEGER");
+    this.ensureColumn("seasons", "resumed_at", "INTEGER");
     this.backfillTurnStats();
     this.backfillKnowledgeSeries();
     this.backfillWorkerTurns();
@@ -1176,7 +1179,8 @@ export class ResearchStore {
         slot.started_at !== null &&
         now - slot.started_at < stallMs,
     );
-    if (waiting && now - waiting.prepared_at >= stallMs && !decisionInFlight) {
+    const stallWindowStartedAt = waiting ? Math.max(waiting.prepared_at, season.resumed_at ?? 0) : now;
+    if (waiting && now - stallWindowStartedAt >= stallMs && !decisionInFlight) {
       this.expireLeases(now);
       const stalledSlots = this.db
         .query("SELECT civ,status,error FROM decision_slots WHERE season_id=? AND turn=? ORDER BY civ")
@@ -1186,7 +1190,7 @@ export class ResearchStore {
         action: "pause_players" as const,
         reason: "turn_stalled" as const,
         stalledTurn: waiting.turn,
-        stalledForMs: now - waiting.prepared_at,
+        stalledForMs: now - stallWindowStartedAt,
         slots: stalledSlots,
         replay,
       };
@@ -1504,8 +1508,8 @@ export class ResearchStore {
     }
     return (
       this.db
-        .query("UPDATE seasons SET status='active',config_json=?,updated_at=? WHERE id=? AND status='paused'")
-        .run(JSON.stringify(config), Date.now(), seasonId).changes > 0
+        .query("UPDATE seasons SET status='active',config_json=?,updated_at=?,resumed_at=? WHERE id=? AND status='paused'")
+        .run(JSON.stringify(config), Date.now(), Date.now(), seasonId).changes > 0
     );
   }
 
