@@ -1,0 +1,24 @@
+{
+  "database": "./data/research.sqlite",
+  "runtimeRoot": "./data/coordinator-runtime",
+  "cadenceMs": 300000,
+  "providerTimeoutMs": 600000,
+  "slots": {
+    "north": {
+      "kind": "claude-cli",
+      "provider": "claude-cli",
+      "model": "sonnet",
+      "reasoning": "xhigh",
+      "env": ["CLAUDE_CODE_OAUTH_TOKEN"]
+    },
+    "south": {
+      "kind": "codex-cli",
+      "provider": "codex-cli-zai",
+      "model": "glm-5.3",
+      "reasoning": "high",
+      "profile": "zai",
+      "profileConfigPath": "./config/codex-zai.toml",
+      "env": ["Z_AI_API_KEY"]
+    }
+  }
+}

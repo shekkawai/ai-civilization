@@ -1,0 +1,9 @@
+model = "glm-5.3"
+model_provider = "zai"
+model_reasoning_effort = "high"
+
+[model_providers.zai]
+name = "Z.AI GLM Coding Plan"
+base_url = "https://api.z.ai/api/v1"
+env_key = "Z_AI_API_KEY"
+wire_api = "responses"

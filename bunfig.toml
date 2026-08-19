@@ -1,0 +1,11 @@
+# Supply-chain hardening. Mirrors the cooldown applied to pnpm and uv
+# upstream. Malicious releases are usually pulled from the registry within
+# hours; waiting a week means we rarely, if ever, see them.
+#
+# Bun already defaults to NOT running lifecycle scripts for untrusted
+# packages, so no extra knob is needed to block postinstall malware.
+# https://bun.com/docs/pm/lifecycle
+
+[install]
+minimumReleaseAge = 604800 # seconds == 7 days
+minimumReleaseAgeExcludes = ["@types/bun", "typescript"]
