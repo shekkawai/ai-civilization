@@ -21,7 +21,6 @@
     "**/*.js",
     "**/*.jsx",
     "src",
-    "zosite.json",
     "vite.config.ts",
     "types",
     "**/*.d.ts"

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { ResearchStore } from "../src/research/store";
 
 /**
- * Observer wrapper. An Automation running an observer model calls `pending`, then `brief`, writes
+ * Observer wrapper. A scheduled job running an observer model calls `pending`, then `brief`, writes
  * a Markdown write-up, then calls `save`.
  *
  * Two rules this script exists to enforce:

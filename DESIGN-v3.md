@@ -53,7 +53,7 @@ are in replay. Same page, same components, one control.
 - A new turn arriving while you read **never moves the view**. A quiet strip
   appears: `第 48 回合已到 · 跳到最新`. Click it or ignore it.
 - The clock is honest: `第 47 回合 · 下一回合約 3 分 12 秒後`, or
-  `本季已暫停於第 23 回合` when the automations are paused.
+  `本季已暫停於第 23 回合` when the season is paused.
 - Poll every ~20–30s. Never auto-scroll, never auto-jump.
 
 ### The scrub bar is a story, not a slider

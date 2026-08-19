@@ -237,13 +237,28 @@ function safeError(error: unknown) {
     .slice(0, 2000);
 }
 
+function spawnProvider(command: string[], cwd: string, env: Record<string, string>, civ: CivId) {
+  try {
+    return Bun.spawn(command, { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        `The ${civ} provider CLI "${command[0]}" was not found. Install it and put it on PATH, ` +
+          `or set slots.${civ}.executable in coordinator.json to its full path.`,
+      );
+    }
+    throw error;
+  }
+}
+
 async function runProcess(
   command: string[],
   cwd: string,
   env: Record<string, string>,
   timeoutMs: number,
+  civ: CivId,
 ) {
-  const child = Bun.spawn(command, { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe", env });
+  const child = spawnProvider(command, cwd, env, civ);
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -312,6 +327,7 @@ async function callProvider(config: CoordinatorConfig, civ: CivId, prompt: strin
       cwd,
       env,
       config.providerTimeoutMs,
+      civ,
     );
     return parseClaudeJson(result.stdout);
   }
@@ -339,6 +355,7 @@ async function callProvider(config: CoordinatorConfig, civ: CivId, prompt: strin
     cwd,
     env,
     config.providerTimeoutMs,
+    civ,
   );
   return parseCodexJsonl(result.stdout);
 }
@@ -516,4 +533,11 @@ async function main() {
   } while (true);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(safeError(error));
+    process.exit(1);
+  }
+}

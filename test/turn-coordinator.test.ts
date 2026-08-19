@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   expectedModels,
   modelsMatch,
   pairedClaimsAreBusy,
   parseClaudeJson,
   parseCodexJsonl,
+  probeProviders,
   providerEnvironment,
   type CoordinatorConfig,
 } from "../scripts/turn-coordinator";
@@ -35,6 +39,30 @@ const config: CoordinatorConfig = {
 };
 
 describe("native-plan turn coordinator", () => {
+  test("names a missing provider CLI and its config key instead of a spawn stack", async () => {
+    const runtimeRoot = mkdtempSync(join(tmpdir(), "ai-civilization-probe-"));
+    try {
+      const missing: CoordinatorConfig = {
+        ...config,
+        runtimeRoot,
+        slots: {
+          north: { ...config.slots.north, executable: join(runtimeRoot, "absent-claude") },
+          south: { ...config.slots.south, executable: join(runtimeRoot, "absent-codex") },
+        },
+      };
+      const failure = await probeProviders(missing).then(
+        () => null,
+        (error: unknown) => error as Error,
+      );
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure!.message).toContain("absent-claude");
+      expect(failure!.message).toContain("slots.north.executable");
+      expect(failure!.message).not.toContain("posix_spawn");
+    } finally {
+      rmSync(runtimeRoot, { recursive: true, force: true });
+    }
+  });
+
   test("requires season metadata to match both configured adapters", () => {
     expect(modelsMatch(DEFAULT_SEASON_CONFIG, config)).toBe(false);
     expect(modelsMatch({ ...DEFAULT_SEASON_CONFIG, models: expectedModels(config) }, config)).toBe(true);
