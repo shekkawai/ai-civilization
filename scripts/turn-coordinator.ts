@@ -5,7 +5,7 @@ import { parseModelDecision } from "../src/research/report";
 import { ResearchStore, type ClaimResult, type SeasonConfig } from "../src/research/store";
 import type { CivId } from "../src/sim/types";
 
-type AdapterKind = "claude-cli" | "codex-cli";
+type AdapterKind = "claude-cli" | "codex-cli" | "openai-compatible-api" | "anthropic-api";
 
 export interface AdapterConfig {
   kind: AdapterKind;
@@ -17,6 +17,10 @@ export interface AdapterConfig {
   home?: string;
   profile?: string;
   profileConfigPath?: string;
+  endpoint?: string;
+  apiKeyEnv?: string;
+  apiVersion?: string;
+  maxTokens?: number;
 }
 
 export interface CoordinatorConfigFile {
@@ -51,16 +55,60 @@ interface ProviderResult {
 const CIVS: CivId[] = ["north", "south"];
 const DEFAULT_CADENCE_MS = 5 * 60 * 1000;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10 * 60 * 1000;
+const API_SYSTEM_PROMPT =
+  "Use only the supplied simulation prompt. Do not use tools or outside information. Follow the requested output format exactly.";
 
 function validateAdapter(civ: CivId, adapter: AdapterConfig) {
-  if (adapter.kind !== "claude-cli" && adapter.kind !== "codex-cli") {
-    throw new Error(`${civ}.kind must be claude-cli or codex-cli`);
+  if (
+    adapter.kind !== "claude-cli" &&
+    adapter.kind !== "codex-cli" &&
+    adapter.kind !== "openai-compatible-api" &&
+    adapter.kind !== "anthropic-api"
+  ) {
+    throw new Error(
+      `${civ}.kind must be claude-cli, codex-cli, openai-compatible-api, or anthropic-api`,
+    );
   }
   for (const key of ["provider", "model", "reasoning"] as const) {
     if (!adapter[key]?.trim()) throw new Error(`${civ}.${key} is required`);
   }
   if (adapter.profileConfigPath && adapter.kind !== "codex-cli") {
     throw new Error(`${civ}.profileConfigPath is only valid for codex-cli`);
+  }
+  if (adapter.kind === "openai-compatible-api" || adapter.kind === "anthropic-api") {
+    if (!adapter.endpoint) throw new Error(`${civ}.endpoint is required for ${adapter.kind}`);
+    let endpoint: URL;
+    try {
+      endpoint = new URL(adapter.endpoint);
+    } catch {
+      throw new Error(`${civ}.endpoint must be a valid HTTP or HTTPS URL`);
+    }
+    if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
+      throw new Error(`${civ}.endpoint must use HTTP or HTTPS`);
+    }
+    if (endpoint.username || endpoint.password) {
+      throw new Error(`${civ}.endpoint must not contain credentials`);
+    }
+    if (
+      endpoint.protocol === "http:" &&
+      endpoint.hostname !== "localhost" &&
+      endpoint.hostname !== "127.0.0.1" &&
+      endpoint.hostname !== "[::1]"
+    ) {
+      throw new Error(`${civ}.endpoint must use HTTPS unless it is a loopback address`);
+    }
+    if (adapter.apiKeyEnv && !(adapter.env ?? []).includes(adapter.apiKeyEnv)) {
+      throw new Error(`${civ}.apiKeyEnv must also appear in ${civ}.env`);
+    }
+    if (adapter.apiKeyEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(adapter.apiKeyEnv)) {
+      throw new Error(`${civ}.apiKeyEnv must be an environment variable name`);
+    }
+    if (adapter.kind === "anthropic-api" && !adapter.apiKeyEnv) {
+      throw new Error(`${civ}.apiKeyEnv is required for anthropic-api`);
+    }
+    if (adapter.maxTokens !== undefined && (!Number.isInteger(adapter.maxTokens) || adapter.maxTokens < 1)) {
+      throw new Error(`${civ}.maxTokens must be a positive integer`);
+    }
   }
 }
 
@@ -163,6 +211,130 @@ export function parseClaudeJson(output: string): ProviderResult {
   return { message: event.result.trim(), usage: event.usage ?? modelUsage ?? {} };
 }
 
+function textContent(content: unknown) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block): block is { type?: string; text: string } => {
+      return Boolean(block && typeof block === "object" && typeof (block as { text?: unknown }).text === "string");
+    })
+    .filter((block) => !block.type || block.type === "text" || block.type === "output_text")
+    .map((block) => block.text)
+    .join("");
+}
+
+export function parseOpenAICompatibleJson(output: string): ProviderResult {
+  const event = JSON.parse(output) as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+      completion_tokens_details?: { reasoning_tokens?: number };
+      [key: string]: unknown;
+    };
+  };
+  const message = textContent(event.choices?.[0]?.message?.content).trim();
+  if (!message) throw new Error("OpenAI-compatible API returned no assistant message");
+  const raw = event.usage ?? {};
+  return {
+    message,
+    usage: {
+      ...raw,
+      input_tokens: raw.prompt_tokens,
+      cached_input_tokens: raw.prompt_tokens_details?.cached_tokens,
+      output_tokens: raw.completion_tokens,
+      reasoning_output_tokens: raw.completion_tokens_details?.reasoning_tokens,
+    },
+  };
+}
+
+export function parseAnthropicApiJson(output: string): ProviderResult {
+  const event = JSON.parse(output) as {
+    content?: unknown;
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+      [key: string]: unknown;
+    };
+  };
+  const message = textContent(event.content).trim();
+  if (!message) throw new Error("Anthropic API returned no text content");
+  const raw = event.usage ?? {};
+  return {
+    message,
+    usage: {
+      ...raw,
+      input_tokens: raw.input_tokens,
+      cached_input_tokens: raw.cache_read_input_tokens,
+      output_tokens: raw.output_tokens,
+    },
+  };
+}
+
+export function buildApiRequest(
+  adapter: AdapterConfig,
+  prompt: string,
+  source: NodeJS.ProcessEnv = process.env,
+): { url: string; init: RequestInit } {
+  if (adapter.kind !== "openai-compatible-api" && adapter.kind !== "anthropic-api") {
+    throw new Error("buildApiRequest requires a direct API adapter");
+  }
+  if (!adapter.endpoint) throw new Error(`${adapter.kind} endpoint is required`);
+  if (adapter.apiKeyEnv && !(adapter.env ?? []).includes(adapter.apiKeyEnv)) {
+    throw new Error(`${adapter.apiKeyEnv} must be explicitly allowlisted in adapter.env`);
+  }
+  const apiKey = adapter.apiKeyEnv ? source[adapter.apiKeyEnv] : undefined;
+  if (adapter.apiKeyEnv && !apiKey) {
+    throw new Error(`Required API credential ${adapter.apiKeyEnv} is not set`);
+  }
+
+  if (adapter.kind === "openai-compatible-api") {
+    return {
+      url: adapter.endpoint,
+      init: {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: adapter.model,
+          messages: [
+            { role: "system", content: API_SYSTEM_PROMPT },
+            { role: "user", content: prompt },
+          ],
+          stream: false,
+          ...(adapter.maxTokens ? { max_tokens: adapter.maxTokens } : {}),
+        }),
+      } satisfies RequestInit,
+    };
+  }
+
+  return {
+    url: adapter.endpoint,
+    init: {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "x-api-key": apiKey!,
+        "anthropic-version": adapter.apiVersion ?? "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: adapter.model,
+        system: API_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: adapter.maxTokens ?? 8192,
+      }),
+    } satisfies RequestInit,
+  };
+}
+
 function compactEnvironment(input: Record<string, string | undefined>) {
   return Object.fromEntries(Object.entries(input).filter((entry): entry is [string, string] => Boolean(entry[1])));
 }
@@ -205,6 +377,9 @@ export function providerEnvironment(
       CLAUDE_CODE_SAFE_MODE: "1",
     });
   }
+  if (adapter.kind === "openai-compatible-api" || adapter.kind === "anthropic-api") {
+    return compactEnvironment(extra);
+  }
   return compactEnvironment({
     ...baseEnvironment(source),
     ...extra,
@@ -216,6 +391,7 @@ export function providerEnvironment(
 function prepareRuntime(config: CoordinatorConfig) {
   for (const civ of CIVS) {
     const adapter = config.slots[civ];
+    if (adapter.kind === "openai-compatible-api" || adapter.kind === "anthropic-api") continue;
     mkdirSync(workdir(config, civ), { recursive: true, mode: 0o700 });
     mkdirSync(adapterHome(config, civ), { recursive: true, mode: 0o700 });
     if (adapter.kind === "codex-cli" && adapter.profileConfigPath) {
@@ -302,6 +478,26 @@ function repairInstruction(report: string, raw: string, error: string) {
 
 async function callProvider(config: CoordinatorConfig, civ: CivId, prompt: string) {
   const adapter = config.slots[civ];
+  if (adapter.kind === "openai-compatible-api" || adapter.kind === "anthropic-api") {
+    const request = buildApiRequest(adapter, prompt);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.providerTimeoutMs);
+    try {
+      const response = await fetch(request.url, { ...request.init, signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`Provider API returned HTTP ${response.status} ${response.statusText}`.trim());
+      }
+      const output = await response.text();
+      return adapter.kind === "openai-compatible-api"
+        ? parseOpenAICompatibleJson(output)
+        : parseAnthropicApiJson(output);
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error(`Provider exceeded ${config.providerTimeoutMs} ms timeout`);
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   const cwd = workdir(config, civ);
   const env = providerEnvironment(config, civ);
   if (adapter.kind === "claude-cli") {

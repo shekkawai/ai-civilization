@@ -21,6 +21,7 @@ Read `README.md` before changing the engine, coordinator, research store, or spe
 - Keep databases, credentials, CLI homes, generated profiles, and provider output under ignored paths.
 - The coordinator must use empty working directories and explicit environment allowlists.
 - Never log prompts, credentials, bearer headers, or full provider environments.
+- Direct API secrets belong only in allowlisted environment variables. Keep provider and harness labels exact; never label an API run as native-plan.
 - A provider, binding, submission, or replay failure pauses the season. Do not resolve a partial pair.
 - A restarted coordinator that finds both sides still leased for the same turn waits for the leases to expire; it does not pause. Resuming a paused season starts a fresh stall window without rewriting the prepared turn or its snapshot.
 

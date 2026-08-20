@@ -24,7 +24,7 @@ It never receives unseen locations, hidden quantities, map bounds, spectator ana
 
 - A deterministic TypeScript simulation engine with fog of war, physical carrying, storage, construction, population pressure, resource scarcity, correspondence, and neutral block removal.
 - A SQLite research ledger containing immutable prompts, responses, validation results, world hashes, action outcomes, and replay frames.
-- A paired coordinator that launches both native subscription CLIs concurrently from one frozen snapshot, validates locally, repairs at most once, submits both decisions, and verifies replay.
+- A paired coordinator that calls any supported CLI or direct API concurrently from one frozen snapshot, validates locally, repairs at most once, submits both decisions, and verifies replay.
 - A bilingual React spectator that separates world truth, each civilization's belief, engine facts, and model-authored claims.
 - Regression tests for replay integrity, information leaks, routing, logistics, lifecycle safety, and spectator calculations.
 
@@ -47,12 +47,16 @@ The coordinator is not involved in world resolution. It only obtains two decisio
 ## Requirements
 
 - Bun 1.3 or newer
-- One supported CLI per seat:
-  - Claude Code CLI, or
-  - Codex CLI, including compatible Codex profiles such as Z.AI
-- Credentials or subscription authentication for those CLIs
+- One supported adapter per seat:
+  - Claude Code CLI;
+  - Codex CLI, including compatible Codex profiles such as Z.AI;
+  - an OpenAI-compatible Chat Completions API; or
+  - the Anthropic Messages API.
+- Credentials or subscription authentication for the selected adapters
 
 Native-plan runs measure a model together with its CLI harness. They are not identical to minimal-API model comparisons. Record the adapter, model, reasoning level, and CLI version with every season.
+
+Direct-API runs do not require Codex or Claude Code. They are a different experimental harness and must be labelled accordingly, for example `deepseek-api` rather than `codex-cli`. The coordinator records the configured provider, model, and reasoning label but does not guess provider-specific reasoning parameters.
 
 ## Install and verify
 
@@ -88,10 +92,22 @@ Supported adapter kinds:
 | --- | --- | --- |
 | `claude-cli` | `claude -p` with tools disabled, safe mode, no session persistence | Empty working directory, dedicated home, Claude memory disabled |
 | `codex-cli` | `codex exec` with an optional profile | Empty working directory, dedicated `CODEX_HOME`, read-only sandbox |
+| `openai-compatible-api` | HTTP Chat Completions request to the configured endpoint | Only the frozen prompt, model, and ordinary generation fields are sent |
+| `anthropic-api` | HTTP Messages request to the configured endpoint | Only the frozen prompt, model, and ordinary generation fields are sent |
 
 Only the environment variable names listed in a seat's `env` array are passed through. Values stay in the process environment; do not put credentials in JSON or TOML files.
 
 The included example runs Claude on the north seat and GLM through a Codex `zai` profile on the south seat. `config/codex-zai.toml` contains provider metadata only and reads the key from `Z_AI_API_KEY`.
+
+For an API-only setup, copy the API example instead:
+
+```bash
+cp coordinator.api.example.json coordinator.json
+```
+
+Edit both placeholder endpoints and models, then add the named keys to `.env` or your process environment. `openai-compatible-api` may omit `apiKeyEnv` for a trusted local endpoint that needs no authentication. `anthropic-api` requires `apiKeyEnv`. A key named by `apiKeyEnv` must also appear in that seat's `env` allowlist. Secrets never belong in `coordinator.json`.
+
+`endpoint` is the complete request URL. Remote endpoints must use HTTPS; plain HTTP is accepted only for loopback services such as a local model server. Redirects are rejected so an authorization header cannot be forwarded to an unexpected host. `maxTokens` is optional for OpenAI-compatible APIs and defaults to `8192` for Anthropic. `apiVersion` is Anthropic-only and defaults to `2023-06-01`.
 
 Use separate authentication/configuration directories for the game. This prevents personal `CLAUDE.md`, `AGENTS.md`, Codex settings, and unrelated environment variables from entering a decision.
 

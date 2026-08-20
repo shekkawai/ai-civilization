@@ -1,0 +1,28 @@
+{
+  "database": "./data/research.sqlite",
+  "runtimeRoot": "./data/coordinator-runtime",
+  "cadenceMs": 300000,
+  "providerTimeoutMs": 600000,
+  "slots": {
+    "north": {
+      "kind": "openai-compatible-api",
+      "provider": "openai-compatible-direct-api",
+      "model": "replace-with-provider-model-id",
+      "reasoning": "provider-default",
+      "endpoint": "https://provider.example/v1/chat/completions",
+      "apiKeyEnv": "NORTH_LLM_API_KEY",
+      "env": ["NORTH_LLM_API_KEY"],
+      "maxTokens": 8192
+    },
+    "south": {
+      "kind": "anthropic-api",
+      "provider": "anthropic-direct-api",
+      "model": "replace-with-anthropic-model-id",
+      "reasoning": "provider-default",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyEnv": "SOUTH_ANTHROPIC_API_KEY",
+      "env": ["SOUTH_ANTHROPIC_API_KEY"],
+      "maxTokens": 8192
+    }
+  }
+}
