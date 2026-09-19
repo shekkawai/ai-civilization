@@ -34,3 +34,11 @@ bun run typecheck
 bun run test
 bun run build
 ```
+
+## Moved from the workspace root notes (2026-09-19)
+
+This is the **public Apache-2.0 export** (`https://github.com/shekkawai/ai-civilization`) of the
+private production repository `Sites/ai-civilization-live`. It has independent clean history and
+excludes live databases, provider credentials and IDs, Zo service configuration, private
+operations, and season history. Never push the private production repository directly; port
+reviewed source changes deliberately into this export.
